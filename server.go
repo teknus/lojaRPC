@@ -1,13 +1,10 @@
 package main
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/rpc"
 	"os"
@@ -51,27 +48,34 @@ func (loja *Loja) Login(msg *[]byte, reply *[]byte) error {
 	dmsg, _ := rsa.DecryptPKCS1v15(rand.Reader, &loja.privateKey, *msg)
 	_ = json.Unmarshal(dmsg, &user)
 	userKey := loja.usersKey[user["Login"]]
-	dmsg, _ = rsa.EncryptPKCS1v15(rand.Reader, &userKey, sessionKey())
+	loja.usersSessionKey[user["Login"]] = data.SessionKey()
+	dmsg, _ = rsa.EncryptPKCS1v15(rand.Reader, &userKey, loja.usersSessionKey[user["Login"]])
 	*reply = dmsg
 	return nil
 }
 
-// func (loja *Loja) CreateProduct(msg *data.Message, reply *bool) error {
-// 	data := getData(loja, msg.Body)
-// 	*reply = true
-// 	user, product := data.UserData, data.ProductData
-// 	if loja.users[user.Login] == user.Password {
-// 		for _, value := range loja.products {
-// 			if value == product {
-// 				*reply = false
-// 			}
-// 		}
-// 		if *reply {
-// 			loja.products[product.Name] = product
-// 		}
-// 	}
-// 	return nil
-// }
+func (loja *Loja) CreateProduct(msg *map[string][]byte, reply *bool) error {
+	var dmsg []byte
+	var product data.Product
+	var request map[string]string
+	for key, value := range *msg {
+		dmsg = data.Decrypt(loja.usersSessionKey[key], value)
+		_ = json.Unmarshal(dmsg, &request)
+		product = data.Product{Name: request["Name"], Price: request["Price"], Description: request["Description"]}
+		for _, value := range loja.products {
+			if value == product {
+				*reply = false
+				return nil
+			}
+		}
+		*reply = true
+	}
+	if *reply {
+		loja.products[product.Name] = product
+	}
+	fmt.Println(loja.products)
+	return nil
+}
 
 // func (loja *Loja) UpdateProduct(msg *data.Message, reply *bool) error {
 // 	data := getData(loja, msg.Body)
@@ -133,6 +137,7 @@ func main() {
 	loja.usersKey = make(map[string]rsa.PublicKey)
 	loja.users = make(map[string]string)
 	loja.products = make(map[string]data.Product)
+	loja.usersSessionKey = make(map[string][]byte)
 	loja.publicKey = loja.privateKey.PublicKey
 	loja.users["teknus"] = "12345"
 	rpc.Register(loja)
@@ -155,54 +160,4 @@ func checkError(err error) {
 		fmt.Println("Fatal error ", err.Error())
 		os.Exit(1)
 	}
-}
-
-const symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_!@#$%*"
-
-func sessionKey() []byte {
-	n := 32
-	output := make([]byte, n)
-	randomness := make([]byte, n)
-	_, err := rand.Read(randomness)
-	if err != nil {
-		panic(err)
-	}
-	for pos := range output {
-		random := uint8(randomness[pos])
-		randomPos := random % uint8(len(symbols))
-		output[pos] = symbols[randomPos]
-	}
-
-	return output
-}
-
-func encrypt(key []byte, plaintext []byte) []byte {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		panic(err)
-	}
-	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		panic(err)
-	}
-	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
-	return ciphertext
-}
-
-func decrypt(key []byte, ciphertext []byte) []byte {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		panic(err)
-	}
-	if len(ciphertext) < aes.BlockSize {
-		panic("ciphertext too short")
-	}
-	iv := ciphertext[:aes.BlockSize]
-	ciphertext = ciphertext[aes.BlockSize:]
-
-	stream := cipher.NewCFBDecrypter(block, iv)
-	stream.XORKeyStream(ciphertext, ciphertext)
-	return ciphertext
 }

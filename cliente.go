@@ -61,7 +61,7 @@ func main() {
 	privateKey, _ := rsa.GenerateKey(rand.Reader, 2048)
 	user := new(data.User)
 	user.Userkey = privateKey.PublicKey
-
+	var boolReply bool
 	go readShell(keyBoardInput)
 	go writeShell(fromServer)
 	msgReply := new([]byte)
@@ -101,13 +101,43 @@ func main() {
 					fmt.Println("Voce já esta logado")
 				}
 			case "/create":
-				fmt.Println("create")
+				if len(user.SessionKey) > 0 {
+					if len(command) > 3 {
+						p := map[string]string{"Name": command[1], "Price": command[2], "Description": strings.Join(command[3:], " ")}
+						mp, _ := json.Marshal(p)
+						encmp := data.Encrypt(user.SessionKey, mp)
+						createProduct := map[string][]byte{user.Login: encmp}
+						_ = client.Call("Loja.CreateProduct", createProduct, &boolReply)
+						if boolReply {
+							fmt.Println("Criado com sucesso")
+						} else {
+							fmt.Println("Ocorreu um erro ao criar o produto ele pode já estar no banco")
+						}
+					} else {
+						fmt.Println("Para criar um produto ")
+						fmt.Println("   /create nomeDoProduto precoDoProduto descricaoDoProduto")
+					}
+				} else {
+					fmt.Println("Acesso não autorizado")
+				}
 			case "/update":
-				fmt.Println("Update")
+				if len(user.SessionKey) > 0 {
+					fmt.Println("Update")
+				} else {
+					fmt.Println("Acesso não autorizado")
+				}
 			case "/delete":
-				fmt.Println("Delete")
+				if len(user.SessionKey) > 0 {
+					fmt.Println("Delete")
+				} else {
+					fmt.Println("Acesso não autorizado")
+				}
 			case "/list":
-				fmt.Println("List")
+				if len(user.SessionKey) > 0 {
+					fmt.Println("List")
+				} else {
+					fmt.Println("Acesso não autorizado")
+				}
 			}
 		}
 	}
