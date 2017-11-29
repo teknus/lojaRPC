@@ -71,29 +71,34 @@ func main() {
 			command := strings.Split(text, " ")
 			switch c := command[0]; c {
 			case "/login":
-				if len(command) == 3 {
-					user.Login = command[1]
-					user.Password = command[2]
+				if len(user.SessionKey) <= 0 {
+					if len(command) == 3 {
+						user.Login = command[1]
+						user.Password = command[2]
 
-					//Pegar Chave Publica do Servidor
-					var reply rsa.PublicKey
-					send := map[string]rsa.PublicKey{user.Login: user.Userkey}
-					err := client.Call("Loja.GetPublicKey", send, &reply)
-					user.ServerKey = reply
+						//Pegar Chave Publica do Servidor
+						var reply rsa.PublicKey
+						send := map[string]rsa.PublicKey{user.Login: user.Userkey}
+						err := client.Call("Loja.GetPublicKey", send, &reply)
+						user.ServerKey = reply
 
-					if err != nil {
-						fmt.Println("Error para pegar PublicKey no Server")
+						if err != nil {
+							fmt.Println("Error para pegar PublicKey no Server")
+						}
+						//Fazer Login e pegar chave de sessão hadoop jar /usr/lib/hadoop-2.8.2/share/hadoop/tools/lib/hadoop-streaming-2.8.2.jar -D mapred.map.tasks=4     -mapper mapper.py     -reducer reducer.py    -input wordcount/mobydick.txt     -output wordcount/output
+						plainUser, _ := json.Marshal(user.ToMap())
+						criptUser, _ := rsa.EncryptPKCS1v15(rand.Reader, &user.ServerKey, plainUser)
+						_ = client.Call("Loja.Login", criptUser, msgReply)
+						dmsg, _ := rsa.DecryptPKCS1v15(rand.Reader, privateKey, *msgReply)
+						user.SessionKey = dmsg
+						if len(user.SessionKey) > 0 {
+							fmt.Println("Login OK!")
+						} else {
+							fmt.Println("Error no Login")
+						}
 					}
-
-					//Fazer Login e pegar chave de sessão hadoop jar /usr/lib/hadoop-2.8.2/share/hadoop/tools/lib/hadoop-streaming-2.8.2.jar -D mapred.map.tasks=4     -mapper mapper.py     -reducer reducer.py    -input wordcount/mobydick.txt     -output wordcount/output
-
-					plainUser, _ := json.Marshal(user.ToMap())
-					criptUser, _ := rsa.EncryptPKCS1v15(rand.Reader, &user.ServerKey, plainUser)
-					_ = client.Call("Loja.Login", criptUser, msgReply)
-					fmt.Println(msgReply)
-					dmsg, _ := rsa.DecryptPKCS1v15(rand.Reader, privateKey, *msgReply)
-					user.SessionKey = dmsg
-					fmt.Println("Login OK!")
+				} else {
+					fmt.Println("Voce já esta logado")
 				}
 			case "/create":
 				fmt.Println("create")
