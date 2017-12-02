@@ -3,11 +3,11 @@ package main
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/rpc"
 	"os"
+	"strings"
 
 	data "github.com/teknus/lojaRPC/dataStructs"
 )
@@ -21,47 +21,39 @@ type Loja struct {
 	products        map[string]data.Product
 }
 
-// func getDataAsymmetric(loja *Loja, body []byte) data.Data {
-// 	var data data.Data
-// 	msgDec, _ := rsa.DecryptPKCS1v15(rand.Reader, &loja.privateKey, body)
-// 	_ = json.Unmarshal(msgDec, &data)
-// 	return data
-// }
-
-// func getData(loja *Loja, body []byte) data.Data {
-// 	var data data.Data
-// 	msgDec := decrypt(loja.sessionKey, body)
-// 	_ = json.Unmarshal(msgDec, &data)
-// 	return data
-// }
-
 func (loja *Loja) GetPublicKey(msg *map[string]rsa.PublicKey, reply *rsa.PublicKey) error {
-	for key, value := range *msg {
-		loja.usersKey[key] = value
+	for login, userKey := range *msg {
+		if loja.users[login] != "" {
+			loja.usersKey[login] = userKey
+			*reply = loja.publicKey
+		}
 	}
-	*reply = loja.publicKey
 	return nil
 }
 
 func (loja *Loja) Login(msg *[]byte, reply *[]byte) error {
-	var user map[string]string
 	dmsg, _ := rsa.DecryptPKCS1v15(rand.Reader, &loja.privateKey, *msg)
-	_ = json.Unmarshal(dmsg, &user)
-	userKey := loja.usersKey[user["Login"]]
-	loja.usersSessionKey[user["Login"]] = data.SessionKey()
-	dmsg, _ = rsa.EncryptPKCS1v15(rand.Reader, &userKey, loja.usersSessionKey[user["Login"]])
-	*reply = dmsg
+	splitedmsg := strings.Split(string(dmsg[:len(dmsg)]), ":")
+	for login, password := range loja.users {
+		if login == splitedmsg[0] {
+			if password == splitedmsg[1] {
+				userKey := loja.usersKey[splitedmsg[0]]
+				loja.usersSessionKey[splitedmsg[0]] = data.SessionKey()
+				dmsg, _ = rsa.EncryptPKCS1v15(rand.Reader, &userKey, loja.usersSessionKey[splitedmsg[0]])
+				*reply = dmsg
+			}
+		}
+	}
 	return nil
 }
 
 func (loja *Loja) CreateProduct(msg *map[string][]byte, reply *bool) error {
 	var dmsg []byte
 	var product data.Product
-	var request map[string]string
 	for key, value := range *msg {
 		dmsg = data.Decrypt(loja.usersSessionKey[key], value)
-		_ = json.Unmarshal(dmsg, &request)
-		product = data.Product{Name: request["Name"], Price: request["Price"], Description: request["Description"]}
+		splitedmsg := strings.Split(string(dmsg[:len(dmsg)]), ":")
+		product = data.Product{Name: splitedmsg[0], Price: splitedmsg[1], Description: splitedmsg[2]}
 		for _, value := range loja.products {
 			if value == product {
 				*reply = false
@@ -77,58 +69,74 @@ func (loja *Loja) CreateProduct(msg *map[string][]byte, reply *bool) error {
 	return nil
 }
 
-// func (loja *Loja) UpdateProduct(msg *data.Message, reply *bool) error {
-// 	data := getData(loja, msg.Body)
-// 	*reply = true
-// 	user, product := data.UserData, data.ProductData
-// 	if loja.users[user.Login] == user.Password {
-// 		for _, value := range loja.products {
-// 			if value != product {
-// 				*reply = false
-// 			}
-// 		}
-// 		if *reply {
-// 			loja.products[product.Name] = product
-// 		}
-// 	}
-// 	return nil
-// }
-
-// func (loja *Loja) DeleteProduct(msg *data.Message, reply *bool) error {
-// 	data := getData(loja, msg.Body)
-// 	*reply = true
-// 	user, product := data.UserData, data.ProductData
-// 	if loja.users[user.Login] == user.Password {
-// 		for _, value := range loja.products {
-// 			if value != product {
-// 				*reply = false
-// 			}
-// 		}
-// 		if *reply {
-// 			delete(loja.products, product.Name)
-// 		}
-// 	}
-// 	return nil
-// }
-
-// func (loja *Loja) AllProduct(msg *data.Message, reply *data.Message) error {
-// 	localData := getData(loja, msg.Body)
-// 	user := localData.UserData
-// 	if loja.users[user.Login] == user.Password {
-// 		plaintext, _ := json.Marshal(loja.products)
-// 		ciphertext := encrypt(localData.UserData.SessionKey, plaintext)
-// 		reply.Body = ciphertext
-// 	}
-// 	return nil
-// }
-
-///login teknus 12345
-func (loja *Loja) Teste(msg *[]byte, reply *data.Message) error {
-	print(msg)
-	dmsg, _ := rsa.DecryptPKCS1v15(rand.Reader, &loja.privateKey, *msg)
-	reply.Body = dmsg
+func (loja *Loja) UpdateProduct(msg *map[string][]byte, reply *bool) error {
+	var dmsg []byte
+	var product data.Product
+	*reply = false
+	for key, value := range *msg {
+		dmsg = data.Decrypt(loja.usersSessionKey[key], value)
+		splitedmsg := strings.Split(string(dmsg[:len(dmsg)]), ":")
+		product = data.Product{Name: splitedmsg[0], Price: splitedmsg[1], Description: splitedmsg[2]}
+		_, ok := loja.products[splitedmsg[0]]
+		if ok {
+			loja.products[splitedmsg[0]] = product
+		}
+	}
+	if *reply {
+		loja.products[product.Name] = product
+	}
 	return nil
 }
+
+func (loja *Loja) DeleteProduct(msg *map[string][]byte, reply *bool) error {
+	var dmsg []byte
+	var tempMap map[string]data.Product
+	for key, value := range *msg {
+		dmsg = data.Decrypt(loja.usersSessionKey[key], value)
+		splitedmsg := strings.Split(string(dmsg[:len(dmsg)]), ":")
+		key := splitedmsg[0]
+		//delete(loja.products, splitedmsg[0])
+		for key, value := range loja.products {
+			if key != splitedmsg[0] {
+				tempMap[key] = value
+			} else {
+				*reply = true
+			}
+		}
+		loja.products = tempMap
+		fmt.Println(tempMap)
+		if loja.products == nil {
+			loja.products = make(map[string]data.Product)
+		}
+	}
+	return nil
+}
+
+func (loja *Loja) AllProduct(msg *string, reply *[]byte) error {
+	var r []byte
+	for _, value := range loja.products {
+		r = append(r, []byte(value.Name+":"+value.Price+":"+value.Description+";")...)
+	}
+	*reply = data.Encrypt(loja.usersSessionKey[*msg], r)
+	return nil
+}
+
+func (loja *Loja) Find(msg *map[string][]byte, reply *[]byte) error {
+	var r []byte
+	for login, p := range *msg {
+		dmsg := data.Decrypt(loja.usersSessionKey[login], p)
+		product := strings.Split(string(dmsg[:len(dmsg)]), ":")
+		for name, value := range loja.products {
+			if name == product[0] {
+				r = append(r, []byte(value.Name+":"+value.Price+":"+value.Description+";")...)
+			}
+		}
+		*reply = data.Encrypt(loja.usersSessionKey[login], r)
+	}
+	return nil
+}
+
+///login teknus 12345
 
 func main() {
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
@@ -141,7 +149,7 @@ func main() {
 	loja.publicKey = loja.privateKey.PublicKey
 	loja.users["teknus"] = "12345"
 	rpc.Register(loja)
-	tcpAddr, err := net.ResolveTCPAddr("tcp", ":1234")
+	tcpAddr, err := net.ResolveTCPAddr("tcp", ":9090")
 	checkError(err)
 
 	listener, err := net.ListenTCP("tcp", tcpAddr)

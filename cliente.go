@@ -85,8 +85,7 @@ func main() {
 						if err != nil {
 							fmt.Println("Error para pegar PublicKey no Server")
 						}
-						//Fazer Login e pegar chave de sessão hadoop jar /usr/lib/hadoop-2.8.2/share/hadoop/tools/lib/hadoop-streaming-2.8.2.jar -D mapred.map.tasks=4     -mapper mapper.py     -reducer reducer.py    -input wordcount/mobydick.txt     -output wordcount/output
-						plainUser, _ := json.Marshal(user.ToMap())
+						plainUser := []byte(user.Login + ":" + user.Password)
 						criptUser, _ := rsa.EncryptPKCS1v15(rand.Reader, &user.ServerKey, plainUser)
 						_ = client.Call("Loja.Login", criptUser, msgReply)
 						dmsg, _ := rsa.DecryptPKCS1v15(rand.Reader, privateKey, *msgReply)
@@ -103,9 +102,8 @@ func main() {
 			case "/create":
 				if len(user.SessionKey) > 0 {
 					if len(command) > 3 {
-						p := map[string]string{"Name": command[1], "Price": command[2], "Description": strings.Join(command[3:], " ")}
-						mp, _ := json.Marshal(p)
-						encmp := data.Encrypt(user.SessionKey, mp)
+						p := []byte(command[1] + ":" + command[2] + ":" + strings.Join(command[3:], " "))
+						encmp := data.Encrypt(user.SessionKey, p)
 						createProduct := map[string][]byte{user.Login: encmp}
 						_ = client.Call("Loja.CreateProduct", createProduct, &boolReply)
 						if boolReply {
@@ -122,19 +120,61 @@ func main() {
 				}
 			case "/update":
 				if len(user.SessionKey) > 0 {
-					fmt.Println("Update")
+					//Fazer uma busca na loja caso exista e a descrição ou o valor ou nome estaja vazio preencher
+					p := []byte(command[1] + ":" + command[2] + ":" + strings.Join(command[3:], " "))
+					encmp := data.Encrypt(user.SessionKey, p)
+					createProduct := map[string][]byte{user.Login: encmp}
+					_ = client.Call("Loja.CreateProduct", createProduct, &boolReply)
+					if boolReply {
+						fmt.Println("Criado com sucesso")
+					} else {
+						fmt.Println("Ocorreu um erro ao criar o produto ele pode já estar no banco")
+					}
 				} else {
-					fmt.Println("Acesso não autorizado")
+					fmt.Println("Para atualizar um produto ")
+					fmt.Println("   /update nomeDoProduto precoDoProduto descricaoDoProduto")
 				}
 			case "/delete":
 				if len(user.SessionKey) > 0 {
-					fmt.Println("Delete")
+					p := []byte(command[1] + ":")
+					encmp := data.Encrypt(user.SessionKey, p)
+					createProduct := map[string][]byte{user.Login: encmp}
+					_ = client.Call("Loja.DeleteProduct", createProduct, &boolReply)
+					if boolReply {
+						fmt.Println("Deletou")
+					} else {
+						fmt.Println("Não existe")
+					}
 				} else {
 					fmt.Println("Acesso não autorizado")
 				}
+
+			case "/find":
+				if len(user.SessionKey) > 0 {
+					p := []byte(command[1] + ":")
+					encmp := data.Encrypt(user.SessionKey, p)
+					createProduct := map[string][]byte{user.Login: encmp}
+					_ = client.Call("Loja.Find", createProduct, msgReply)
+					dec := data.Decrypt(user.SessionKey, *msgReply)
+					fmt.Println(string(dec))
+
+				} else {
+					fmt.Println("Acesso não autorizado")
+				}
+
 			case "/list":
 				if len(user.SessionKey) > 0 {
-					fmt.Println("List")
+					_ = client.Call("Loja.AllProduct", user.Login, msgReply)
+					decmsg := data.Decrypt(user.SessionKey, *msgReply)
+					dmsg := string(decmsg)
+					splitedmsg := strings.Split(string(dmsg[:len(dmsg)]), ";")
+					for i := 0; i < len(splitedmsg)-1; i += 1 {
+						line := strings.Split(splitedmsg[i], ":")
+						fmt.Println("Nome do Produto: ", line[0])
+						fmt.Println("Preço do Produto: ", line[1])
+						fmt.Println("Descrição do Produto: ", line[2])
+						fmt.Println("")
+					}
 				} else {
 					fmt.Println("Acesso não autorizado")
 				}
