@@ -155,9 +155,15 @@ func main() {
 					encmp := data.Encrypt(user.SessionKey, p)
 					createProduct := map[string][]byte{user.Login: encmp}
 					_ = client.Call("Loja.Find", createProduct, msgReply)
-					dec := data.Decrypt(user.SessionKey, *msgReply)
-					fmt.Println(string(dec))
-
+					dmsg := data.Decrypt(user.SessionKey, *msgReply)
+					splitedmsg := strings.Split(string(dmsg[:len(dmsg)]), ";")
+					for i := 0; i < len(splitedmsg)-1; i += 1 {
+						line := strings.Split(splitedmsg[i], ":")
+						fmt.Println("Nome do Produto: ", line[0])
+						fmt.Println("Preço do Produto: ", line[1])
+						fmt.Println("Descrição do Produto: ", line[2])
+						fmt.Println("")
+					}
 				} else {
 					fmt.Println("Acesso não autorizado")
 				}

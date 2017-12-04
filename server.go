@@ -94,7 +94,7 @@ func (loja *Loja) DeleteProduct(msg *map[string][]byte, reply *bool) error {
 	for key, value := range *msg {
 		dmsg = data.Decrypt(loja.usersSessionKey[key], value)
 		splitedmsg := strings.Split(string(dmsg[:len(dmsg)]), ":")
-		key := splitedmsg[0]
+		//key := splitedmsg[0]
 		//delete(loja.products, splitedmsg[0])
 		for key, value := range loja.products {
 			if key != splitedmsg[0] {
